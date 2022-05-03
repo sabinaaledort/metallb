@@ -362,8 +362,8 @@ def dev_env(ctx, architecture="amd64", name="kind", protocol=None, frr_volume_di
     run("kind load docker-image --name={} quay.io/metallb/speaker:dev-{}".format(name, architecture), echo=True)
     run("kind load docker-image --name={} quay.io/metallb/mirror-server:dev-{}".format(name, architecture), echo=True)
 
-    if enable_webhooks:
-        install_cert_manager(ctx)
+    #if enable_webhooks:
+    #    install_cert_manager(ctx)
 
     if helm_install:
         run("helm install metallb charts/metallb/ --set controller.image.tag=dev-{} "
