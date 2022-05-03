@@ -5,8 +5,10 @@ metadata:
   name: {{ template "metallb.fullname" . }}-validating-webhook-configuration
   labels:
     {{- include "metallb.labels" . | nindent 4 }}
+{{- if .Values.webhooks.certManager.enabled }}
   annotations:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ template "metallb.fullname" . }}-serving-cert
+{{- end }}
 webhooks:
 - admissionReviewVersions:
   - v1
@@ -121,6 +123,7 @@ spec:
     targetPort: 9443
   selector:
     app.kubernetes.io/component: controller
+{{- if .Values.webhooks.certManager.enabled }}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -145,4 +148,140 @@ metadata:
     {{- include "metallb.labels" . | nindent 4 }}
 spec:
   selfSigned: {}
+{{- end }}
+{{- if and .Values.webhooks.patch.enabled (not .Values.webhooks.certManager.enabled) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name:  {{ template "metallb.fullname" . }}-create-secret
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  labels:
+    app: {{ template "metallb.name" $ }}-create-secret
+{{- include "metallb.labels" . | nindent 4 }}
+spec:
+  {{- if .Capabilities.APIVersions.Has "batch/v1alpha1" }}
+  # Alpha feature since k8s 1.12
+  ttlSecondsAfterFinished: 0
+  {{- end }}
+  template:
+    metadata:
+      name:  {{ template "metallb.fullname" . }}-create-secret
+{{- with .Values.webhooks.patch.podAnnotations }}
+      annotations:
+{{ toYaml . | nindent 8 }}
+{{- end }}
+      labels:
+        app: {{ template "metallb.name" $ }}-create-secret
+{{- include "metallb.labels" . | nindent 8 }}
+    spec:
+      {{- if .Values.webhooks.patch.priorityClassName }}
+      priorityClassName: {{ .Values.webhooks.patch.priorityClassName }}
+      {{- end }}
+      containers:
+        - name: create
+          {{- if .Values.webhooks.patch.image.sha }}
+          image: {{ .Values.webhooks.patch.image.repository }}:{{ .Values.webhooks.patch.image.tag }}@sha256:{{ .Values.webhooks.patch.image.sha }}
+          {{- else }}
+          image: {{ .Values.webhooks.patch.image.repository }}:{{ .Values.webhooks.patch.image.tag }}
+          {{- end }}
+          imagePullPolicy: {{ .Values.webhooks.patch.image.pullPolicy }}
+          args:
+            - create
+            - --host={{ template "metallb.fullname" . }}-webhook-service.{{ .Release.Namespace }}.svc
+            - --namespace={{ .Release.Namespace }}
+            - --secret-name=webhook-server-cert
+            - --cert-name=tls.crt
+            - --key-name=tls.key
+          resources:
+{{ toYaml .Values.webhooks.patch.resources | indent 12 }}
+      restartPolicy: OnFailure
+      serviceAccountName: {{ template "metallb.controller.serviceAccountName" . }}
+      {{- with .Values.webhooks.patch.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.webhooks.patch.affinity }}
+      affinity:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.webhooks.patch.tolerations }}
+      tolerations:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.webhooks.patch.securityContext }}
+      securityContext:
+{{ toYaml .Values.webhooks.patch.securityContext | indent 8 }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name:  {{ template "metallb.fullname" . }}-patch-webhook
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  labels:
+    app: {{ template "metallb.name" $ }}-patch-webhook
+{{- include "metallb.labels" . | nindent 4 }}
+spec:
+  {{- if .Capabilities.APIVersions.Has "batch/v1alpha1" }}
+  # Alpha feature since k8s 1.12
+  ttlSecondsAfterFinished: 0
+  {{- end }}
+  template:
+    metadata:
+      name:  {{ template "metallb.fullname" . }}-patch-webhook
+{{- with .Values.webhooks.patch.podAnnotations }}
+      annotations:
+{{ toYaml . | nindent 8 }}
+{{- end }}
+      labels:
+        app: {{ template "metallb.name" $ }}-patch-webhook
+{{- include "metallb.labels" . | nindent 8 }}
+    spec:
+      {{- if .Values.webhooks.patch.priorityClassName }}
+      priorityClassName: {{ .Values.webhooks.patch.priorityClassName }}
+      {{- end }}
+      containers:
+        - name: patch
+          {{- if .Values.webhooks.patch.image.sha }}
+          image: {{ .Values.webhooks.patch.image.repository }}:{{ .Values.webhooks.patch.image.tag }}@sha256:{{ .Values.webhooks.patch.image.sha }}
+          {{- else }}
+          image: {{ .Values.webhooks.patch.image.repository }}:{{ .Values.webhooks.patch.image.tag }}
+          {{- end }}
+          imagePullPolicy: {{ .Values.webhooks.patch.image.pullPolicy }}
+          args:
+            - patch
+            - --webhook-name={{ template "metallb.fullname" . }}-validating-webhook-configuration
+            - --patch-mutating=false
+            - --patch-validating=true
+            - --namespace={{ .Release.Namespace }}
+            - --secret-name=webhook-server-cert
+            - --patch-failure-policy={{ .Values.webhooks.failurePolicy }}
+          resources:
+{{ toYaml .Values.webhooks.patch.resources | indent 12 }}
+      restartPolicy: OnFailure
+      serviceAccountName: {{ template "metallb.controller.serviceAccountName" . }}
+      {{- with .Values.webhooks.patch.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.webhooks.patch.affinity }}
+      affinity:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.webhooks.patch.tolerations }}
+      tolerations:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.webhooks.patch.securityContext }}
+      securityContext:
+{{ toYaml .Values.webhooks.patch.securityContext | indent 8 }}
+{{- end }}
+{{- end }}
 {{- end -}}

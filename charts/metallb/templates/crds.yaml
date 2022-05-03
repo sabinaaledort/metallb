@@ -7,7 +7,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.7.0
 {{- if .Values.webhooks.enable }}
+{{- if .Values.webhooks.certManager.enabled }}
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ template "metallb.fullname" . }}-serving-cert    
+{{- end }}
 {{- end }}    
   creationTimestamp: null
   name: addresspools.metallb.io
@@ -528,7 +530,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.7.0
 {{- if .Values.webhooks.enable }}
+{{- if .Values.webhooks.certManager.enabled }}
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ template "metallb.fullname" . }}-serving-cert    
+{{- end }}
 {{- end }}
   creationTimestamp: null
   name: bgppeers.metallb.io

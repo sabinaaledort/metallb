@@ -3,6 +3,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ template "metallb.fullname" . }}:controller
+  {{- if and .Values.webhooks.enable .Values.webhooks.patch.enabled (not .Values.webhooks.certManager.enabled) }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+  {{- end }}
   labels:
     {{- include "metallb.labels" . | nindent 4 }}
 rules:
@@ -20,6 +24,11 @@ rules:
   resources: ["podsecuritypolicies"]
   resourceNames: ["{{ template "metallb.fullname" . }}-controller"]
   verbs: ["use"]
+{{- end }}
+{{- if and .Values.webhooks.enable .Values.webhooks.patch.enabled (not .Values.webhooks.certManager.enabled) }}
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+  verbs: ["get", "update"]
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -83,6 +92,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "metallb.fullname" . }}-controller
+  {{- if and .Values.webhooks.enable .Values.webhooks.patch.enabled (not .Values.webhooks.certManager.enabled) }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+  {{- end }}
   labels: {{- include "metallb.labels" . | nindent 4 }}
 rules:
 {{- if .Values.speaker.memberlist.enabled }}
@@ -121,6 +134,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: {{ template "metallb.fullname" . }}:controller
+  {{- if and .Values.webhooks.enable .Values.webhooks.patch.enabled (not .Values.webhooks.certManager.enabled) }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+  {{- end }}
   labels:
     {{- include "metallb.labels" . | nindent 4 }}
 subjects:
@@ -164,6 +181,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "metallb.fullname" . }}-controller
+  {{- if and .Values.webhooks.enable .Values.webhooks.patch.enabled (not .Values.webhooks.certManager.enabled) }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+  {{- end }}
   labels: {{- include "metallb.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
