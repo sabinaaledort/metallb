@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name:  metallb-patch-webhook
+spec:
+  ttlSecondsAfterFinished: 5
+  template:
+    metadata:
+      name:  metallb-patch-webhook
+    spec:
+      containers:
+        - name: patch
+          image: jettech/kube-webhook-certgen:v1.5.2
+          imagePullPolicy: IfNotPresent
+          args:
+            - patch
+            - --webhook-name=validating-webhook-configuration
+            - --patch-mutating=false
+            - --patch-validating=true
+            - --namespace=metallb-system
+            - --secret-name=webhook-server-cert
+            - --patch-failure-policy=Fail
+      restartPolicy: OnFailure
+      serviceAccountName: controller
+      securityContext:
+        runAsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 2000

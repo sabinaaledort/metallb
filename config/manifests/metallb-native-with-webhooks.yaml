@@ -7,7 +7,6 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: metallb-system/serving-cert
     controller-gen.kubebuilder.io/version: v0.7.0
   name: addresspools.metallb.io
 spec:
@@ -523,7 +522,6 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: metallb-system/serving-cert
     controller-gen.kubebuilder.io/version: v0.7.0
   name: bgppeers.metallb.io
 spec:
@@ -1394,6 +1392,14 @@ rules:
   - podsecuritypolicies
   verbs:
   - use
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
+  verbs:
+  - get
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -1685,33 +1691,69 @@ spec:
         key: node-role.kubernetes.io/master
         operator: Exists
 ---
-apiVersion: cert-manager.io/v1
-kind: Certificate
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: serving-cert
+  name: metallb-create-secret
   namespace: metallb-system
 spec:
-  dnsNames:
-  - webhook-service.metallb-system.svc
-  - webhook-service.metallb-system.svc.cluster.local
-  issuerRef:
-    kind: Issuer
-    name: selfsigned-issuer
-  secretName: webhook-server-cert
+  template:
+    metadata:
+      name: metallb-create-secret
+    spec:
+      containers:
+      - args:
+        - create
+        - --host=webhook-service.metallb-system.svc
+        - --namespace=metallb-system
+        - --secret-name=webhook-server-cert
+        - --cert-name=tls.crt
+        - --key-name=tls.key
+        image: jettech/kube-webhook-certgen:v1.5.2
+        imagePullPolicy: IfNotPresent
+        name: create
+      restartPolicy: OnFailure
+      securityContext:
+        runAsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 2000
+      serviceAccountName: controller
+  ttlSecondsAfterFinished: 5
 ---
-apiVersion: cert-manager.io/v1
-kind: Issuer
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: selfsigned-issuer
+  name: metallb-patch-webhook
   namespace: metallb-system
 spec:
-  selfSigned: {}
+  template:
+    metadata:
+      name: metallb-patch-webhook
+    spec:
+      containers:
+      - args:
+        - patch
+        - --webhook-name=validating-webhook-configuration
+        - --patch-mutating=false
+        - --patch-validating=true
+        - --namespace=metallb-system
+        - --secret-name=webhook-server-cert
+        - --patch-failure-policy=Fail
+        image: jettech/kube-webhook-certgen:v1.5.2
+        imagePullPolicy: IfNotPresent
+        name: patch
+      restartPolicy: OnFailure
+      securityContext:
+        runAsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 2000
+      serviceAccountName: controller
+  ttlSecondsAfterFinished: 5
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  annotations:
-    cert-manager.io/inject-ca-from: metallb-system/serving-cert
+  creationTimestamp: null
   name: validating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
