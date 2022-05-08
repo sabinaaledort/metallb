@@ -731,8 +731,16 @@ def e2etest(ctx, name="kind", export=None, kubeconfig=None, system_namespaces="k
         os.environ['KUBECONFIG'] = kubeconfig
 
     namespaces = system_namespaces.replace(' ', '').split(',')
-    for ns in namespaces:
-        run("kubectl -n {} wait --for=condition=Ready --all pods --timeout 300s".format(ns), hide=True)
+    ready = False
+    attempts = 0
+    max_attempts = 10
+    while not ready or attempts < max_attempts:
+        ready = True
+        for ns in namespaces:
+            res = run("kubectl -n {} wait --for=condition=Ready --all pods --timeout=30s".format(ns), hide=True, warn=True)
+            if res.failed:
+                ready = False
+        attempts += 1
 
     ips_for_containers_v4 = ""
     if ipv4_service_range is None:
