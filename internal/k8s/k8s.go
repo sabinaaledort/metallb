@@ -14,6 +14,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -24,15 +25,19 @@ import (
 	"go.universe.tf/metallb/internal/k8s/controllers"
 	"go.universe.tf/metallb/internal/k8s/epslices"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/open-policy-agent/cert-controller/pkg/rotator"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
@@ -125,7 +130,12 @@ func New(cfg *Config) (*Client, error) {
 				&corev1.Secret{}:                   namespaceSelector,
 			},
 		}),
+		CertDir: "/tmp/k8s-webhook-server/serving-certs",
+		MapperProvider: func(c *rest.Config) (meta.RESTMapper, error) {
+			return apiutil.NewDynamicRESTMapper(c)
+		},
 	})
+
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -244,7 +254,41 @@ func New(cfg *Config) (*Client, error) {
 	}
 
 	if cfg.EnableWebhook {
-		err := enableWebhook(mgr, cfg.ValidateConfig, cfg.Namespace, cfg.Logger)
+		setupFinished := make(chan struct{})
+		webhooks := []rotator.WebhookInfo{
+			{
+				Name: "validating-webhook-configuration",
+				Type: rotator.Validating,
+			},
+		}
+
+		level.Info(c.logger).Log("op", "startup", "action", "setting up cert rotation")
+		err := rotator.AddRotator(mgr, &rotator.CertRotator{
+			SecretKey: types.NamespacedName{
+				Namespace: cfg.Namespace,
+				Name:      "webhook-server-cert",
+			},
+			CertDir:        "/tmp/k8s-webhook-server/serving-certs",
+			CAName:         "cert",
+			CAOrganization: "metallb",
+			DNSName:        "webhook-service.metallb-system.svc",
+			IsReady:        setupFinished,
+			Webhooks:       webhooks,
+			Logger:         c.logger,
+		})
+		if err != nil {
+			level.Error(c.logger).Log("error", err, "unable to set up", "cert rotation")
+			return nil, err
+		}
+
+		level.Info(c.logger).Log("op", "startup", "action", "before setupFinished")
+
+		// Block until the setup (certificate generation) finishes.
+		//<-setupFinished
+
+		level.Info(c.logger).Log("op", "startup", "action", "after setupFinished")
+
+		err = enableWebhook(mgr, cfg.ValidateConfig, cfg.Namespace, cfg.Logger)
 		if err != nil {
 			level.Error(c.logger).Log("error", err, "unable to create", "webhooks")
 			return nil, err

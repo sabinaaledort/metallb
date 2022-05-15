@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"time"
 
 	"go.universe.tf/metallb/internal/allocator"
 	"go.universe.tf/metallb/internal/config"
@@ -186,6 +187,8 @@ func main() {
 
 	c.client = client
 	if err := client.Run(nil); err != nil {
+		time.Sleep(time.Hour)
 		level.Error(logger).Log("op", "startup", "error", err, "msg", "failed to run k8s client")
+		os.Exit(1)
 	}
 }

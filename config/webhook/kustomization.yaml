@@ -1,8 +1,9 @@
 resources:
 - manifests.yaml
 - service.yaml
-- patches/job-create-secret.yaml
-- patches/job-patch-webhook.yaml
+- secret.yaml
+#- patches/job-create-secret.yaml
+#- patches/job-patch-webhook.yaml
 
 configurations:
 - kustomizeconfig.yaml

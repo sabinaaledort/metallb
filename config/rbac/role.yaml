@@ -252,6 +252,20 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     app: metallb
+  name: metallb-system:controller1
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: metallb
   name: metallb-system:speaker
 roleRef:
   apiGroup: rbac.authorization.k8s.io
